@@ -3,6 +3,7 @@
 import argparse
 import json
 import math
+import os
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -135,7 +136,54 @@ def search(query: str) -> list[dict]:
                    vec_distance_cosine(embedding, ?) AS distance
             FROM chunks ORDER BY distance, page_id LIMIT ?
         """, (sqlite_vec.serialize_float32(vector), RAG_TOP_K))
-        return [dict(row) for row in rows]
+     #   return [dict(row) for row in rows]
+        hits = [dict(row) for row in rows]
+    # 通常モードでは従来の検索結果をそのまま返す
+    if os.getenv("AIE_RAG_NEIGHBORS") != "1":
+        return hits
+
+    # 教材JSONからページ一覧を取得
+    pages = load_pages(RAG_SOURCE)
+
+    # 同一資料内のページを番号から検索できるようにする
+    page_map = {
+        (p["document_id"], int(p["page"])): p
+        for p in pages
+    }
+
+    results = []
+    seen = set()
+
+    for hit in hits:
+        # 検索ヒットしたページ
+        if hit["page_id"] not in seen:
+            results.append(hit)
+            seen.add(hit["page_id"])
+
+        # 前後1ページを取得する
+        for offset in (-1, 1):
+            key = (
+                hit["document_id"],
+                int(hit["page"]) + offset
+            )
+            neighbor = page_map.get(key)
+
+            if neighbor is None:
+                continue
+
+            if neighbor["page_id"] in seen:
+                continue
+
+            results.append({
+                **neighbor,
+                "distance": None,
+                "retrieval_type": "neighbor",
+                "source_page_id": hit["page_id"],
+            })
+
+            seen.add(neighbor["page_id"])
+
+    return results
 
 
 def search_graph(query: str) -> dict:

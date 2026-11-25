@@ -143,7 +143,7 @@ def make_quiz(lecture: int) -> str:
 
     # 2. 用語が存在しない場合
     if not terms:
-        return f"第{lecture}回の用語が見つかりませんでした。"
+        raise ValueError(f"第{lecture}回の用語が見つかりませんでした。")
 
     # 3. ランダムに1つ選ぶ
     term = random.choice(terms)
